@@ -1,4 +1,8 @@
-.Rproj.user*
+.Rproj.user/*
 .Rhistory
 .RData
 .Ruserdata
+.Rproj.user
+.Rproj.user/1E61ABE3/pcs/source-pane.pper
+.Rproj.user/1E61ABE3/pcs/windowlayoutstate.pper
+.Rproj.user/1E61ABE3/persistent-state
