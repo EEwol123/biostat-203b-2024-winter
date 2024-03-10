@@ -50,6 +50,7 @@ satoken <- "biostat-203b-2024-winter-313290ce47a6.json"
 # BigQuery authentication using service account
 bq_auth(path = satoken)
 ```
+
 Connect to BigQuery database `mimic4_v2_2` in GCP (Google Cloud Platform), using the project billing account `biostat-203b-2024-winter`.
 ```{r}
 # connect to the BigQuery database `biostat-203b-2024-winter.mimic4_v2_2`
@@ -62,6 +63,11 @@ con_bq <- dbConnect(
 con_bq
 ```
 List all tables in the `mimic4_v2_2` database.
+
+
+
+
+
 ```{r}
 dbListTables(con_bq)
 ```
@@ -219,26 +225,42 @@ library(forcats)
 ```
 
 ```{r}
-mimich<-mimic_icu_cohort%>%collect()
+mimichi<-mimic_icu_cohort%>%
+  print()%>%collect()
 ```
 
 
 ```{r}
-mimich <- mimich %>%
+mimic_icu_cohort <- mimichi %>%
   mutate(across(c(first_careunit, last_careunit, admission_type, admission_location, discharge_location), 
-                ~fct_lump(., prop = 0.05, other_level = "Other"))) %>%
+                ~fct_lump(., n = 4, other_level = "Other"))) %>%
   # Step 2: Collapse race variable levels into specified categories
-  mutate(race = fct_collapse(race,
-                             ASIAN = "ASIAN",
-                             BLACK = "BLACK",
-                             HISPANIC = "HISPANIC",
-                             WHITE = "WHITE",
-                             Other = c("Other", "AMERICAN INDIAN", "ALASKA NATIVE", "UNKNOWN"))) %>%
+ mutate(race = case_when(
+    str_detect(race, "ASIAN") ~ "ASIAN",
+    str_detect(race, "WHITE") ~ "WHITE",
+    str_detect(race, "BLACK") ~ "BLACK",
+    str_detect(race, "HISPANIC") ~ "HISPANIC",
+    TRUE ~ "OTHER"  # Default case if none of the above conditions are met
+  )) %>%
+  
+  select(subject_id,hadm_id,stay_id,intime,outtime,admittime,dischtime,deathtime,"Non Invasive Blood Pressure diastolic","Heart Rate","Non Invasive Blood Pressure systolic",first_careunit,last_careunit,los,admission_type,admission_location,discharge_location,insurance,language,marital_status,race,hospital_expire_flag,gender,dod,sodium,chloride,creatinine,potassium,glucose,hematocrit,wbc,bicarbonate,"Temperature Fahrenheit","Respiratory Rate")%>%
+  mutate("Non Invasive Blood Pressure diastolic",as.numeric("Non Invasive Blood Pressure diastolic"))%>%
+  mutate("Non Invasive Blood Pressure systolic",as.numeric("Non Invasive Blood Pressure systolic"))%>%
+  mutate(`Temperature Fahrenheit`,as.numeric(`Temperature Fahrenheit`))%>%
+  mutate(`Heart Rate`,as.numeric(`Heart Rate`))%>%
+  select(-"Non Invasive Blood Pressure diastolic", -"Heart Rate", -"Non Invasive Blood Pressure systolic",-"Temperature Fahrenheit", -"Respiratory Rate")%>%
   # Create a new variable los_long that is TRUE when los is greater than or equal to 2 days
   mutate(los_long = los >= 2)
 
+```
+
+
+
+
+
+```{r}
 # Step 3: Create the summary table, with custom handling for continuous variables
-table_summary <- mimich %>%
+table_summary <- mimic_icu_cohort %>%
   select(-subject_id, -hadm_id, -stay_id, # Exclude identifier columns
          -intime, -outtime, # Exclude timestamp columns
          -admittime, -dischtime, -deathtime, # Optionally exclude these timestamp columns too
@@ -266,7 +288,6 @@ table_summary <- mimich %>%
 print(table_summary)
 
 ```
-
 
 
 ### Q1.9 Save the final tibble
