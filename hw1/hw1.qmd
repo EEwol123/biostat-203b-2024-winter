@@ -19,11 +19,12 @@ knitr:
     fig.width: 6
     fig.height: 4
     message: FALSE
+    eval: TRUE
 ---
 /mnt/host/c/Users/12825/Documents/biostat-203b-2024-winter/mimic/
 Display machine information for reproducibility:
 ```{r}
-#| eval: false
+
 sessionInfo()
 ```
 
@@ -45,11 +46,15 @@ sessionInfo()
 
 This exercise (and later in this course) uses the [MIMIC-IV data v2.2](https://physionet.org/content/mimiciv/2.2/), a freely accessible critical care database developed by the MIT Lab for Computational Physiology. Follow the instructions at <https://mimic.mit.edu/docs/gettingstarted/> to (1) complete the CITI `Data or Specimens Only Research` course and (2) obtain the PhysioNet credential for using the MIMIC-IV data. Display the verification links to your completion report and completion certificate here. **You must complete Q2 before working on the remaining questions.** (Hint: The CITI training takes a few hours and the PhysioNet credentialing takes a couple days; do not leave it to the last minute.)
 
+Link:
+
+https://www.citiprogram.org/verify/?k00e1566d-2354-4fcd-b6ec-4766f8818c5d-60799375
+https://www.citiprogram.org/verify/?w188d6a54-fa9a-4484-b89d-965d83d93c5f-60799375
+
 ## Q3. Linux Shell Commands
 
 1. Make the MIMIC v2.2 data available at location `~/mimic`. 
 ```{bash}
-#| eval: false
 ls -l ~/mimic
 ```
 
@@ -60,13 +65,13 @@ Refer to the documentation <https://physionet.org/content/mimiciv/2.2/> for deta
 2. Display the contents in the folders `hosp` and `icu` using Bash command `ls -l`. Why are these data files distributed as `.csv.gz` files instead of `.csv` (comma separated values) files? Read the page <https://mimic.mit.edu/docs/iv/> to understand what's in each folder.
 
 ```{bash}
-#| eval: false
+
 ls -l ~/mimic/hosp
 ```
 
 
 ```{bash}
-#| eval: false
+
 ls -l ~/mimic/icu
 ```
 Because the file in "csv.gz"form is smaller and compressed. So it wont use a lot of storage room
@@ -84,15 +89,26 @@ zgrep: Combines grep functionality with gzip compression, enabling you to search
 
 4. (Looping in Bash) What's the output of the following bash script?
 ```{bash}
-#| eval: false
+
 for datafile in ~/mimic/hosp/{a,l,pa}*.gz
 do
   ls -l $datafile
 done
 ```
+
+The script will match and list all files in ~/mimic/hosp/ directory that start with 'a', 'l', or 'pa' and end with '.gz'. It uses brace expansion to create a list of file patterns to match, namely a*.gz, l*.gz, and pa*.gz.
+
+The output displayed in the image shows three files with their permissions, owner, group, size, modification date, and filename. These files appear to match the pattern specified in the Bash script:
+
+admissions.csv.gz
+labevents.csv.gz
+patients.csv.gz
+Each file is listed with the -l option of ls, which includes long format listing information.
+
+
 Display the number of lines in each data file using a similar loop. (Hint: combine linux commands `zcat <` and `wc -l`.)
 
-```{bash}
+```{bash,eval=FALSE}
 for datafile in ~/mimic/hosp/{a,l,pa}*.gz
 do
   echo "$datafile:"
@@ -158,7 +174,7 @@ The admission_type variable in the MIMIC-IV database includes several categories
 
 ls -lh ~/mimic/hosp/labevents.csv.gz
 ```
-```{bash}
+```{bash,eval=FALSE}
 
 gzip -dk ~/mimic/hosp/labevents.csv.gz
 ```
@@ -169,11 +185,11 @@ ls -lh ~/mimic/hosp/labevents.csv
 
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 zcat ~/mimic/hosp/labevents.csv.gz | wc -l
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 rm ~/mimic/hosp/labevents.csv.gz
 ```
 Compressed files (gzip) take up significantly less storage space. 
@@ -186,7 +202,7 @@ For frequent access to the data, especially random access, keeping an uncompress
 
 1. You and your friend just have finished reading *Pride and Prejudice* by Jane Austen. Among the four main characters in the book, Elizabeth, Jane, Lydia, and Darcy, your friend thinks that Darcy was the most mentioned. You, however, are certain it was Elizabeth. Obtain the full text of the novel from <http://www.gutenberg.org/cache/epub/42671/pg42671.txt> and save to your local folder. 
 ```{bash}
-#| eval: false
+
 wget -nc http://www.gutenberg.org/cache/epub/42671/pg42671.txt
 ```
 Explain what `wget -nc` does. Do **not** put this text file `pg42671.txt` in Git. Complete the following loop to tabulate the number of times each of the four characters is mentioned using Linux commands.
