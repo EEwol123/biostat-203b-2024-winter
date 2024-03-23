@@ -61,29 +61,67 @@ Hint: We need to pull information from data files `patients.csv.gz`, `admissions
 ls -l ~/mimic/
 ```
 
-```{r}
 
-patients <- read_csv("~/mimic/hosp/patients.csv.gz")
-admissions <- read_csv("~/mimic/hosp/admissions.csv.gz")
-transfers <- read_csv("~/mimic/hosp/transfers.csv.gz")
-procedures <- read_csv("~/mimic/hosp/procedures_icd.csv.gz")
-diagnoses <- read_csv("~/mimic/hosp/diagnoses_icd.csv.gz")
+
+read in diagnoses_icd.csv.gz and d_icd_diagnoses.csv.gz
+
+```{r}
+patient_id <- 10013310
+
+diagnoses<- read_csv("~/mimic/hosp/diagnoses_icd.csv.gz",
+                     show_col_types = FALSE
+                     )%>%
+  filter(subject_id == patient_id)%>%
+  left_join(
+    read_csv("~/mimic/hosp/d_icd_diagnoses.csv.gz",
+             show_col_types = FALSE
+    ),by=c("icd_code","icd_version")
+  )
 ```
 
 
 
 ```{r}
-fpatients <- subset(patients, subject_id == 10013310)
-fadmissions <- subset(admissions, subject_id == 10013310)
-ftransfers <- subset(transfers, subject_id == 10013310)
-fprocedures <- subset(procedures, subject_id == 10013310)
-fdiagnoses <- subset(diagnoses, subject_id == 10013310)
-
+procedures<- read_csv("~/mimic/hosp/procedures_icd.csv.gz",
+                     show_col_types = FALSE
+                     )%>%
+  filter(subject_id == patient_id)%>%
+  left_join(
+    read_csv("~/mimic/hosp/d_icd_procedures.csv.gz",
+             show_col_types = FALSE
+    ),by=c("icd_code","icd_version")
+  )
 ```
 
 
 
+```{r}
+admissions<-read_csv("~/mimic/hosp/admissions.csv.gz",
+                     show_col_types = FALSE
+                     )%>%
+  filter(subject_id == patient_id)
 
+```
+
+
+```{r}
+transfers<-read_csv("~/mimic/hosp/transfers.csv.gz",
+                     show_col_types = FALSE
+                     )%>%
+  filter(subject_id == patient_id)
+
+
+```
+
+```{r}
+patients<-read_csv("~/mimic/hosp/patients.csv.gz",
+                     show_col_types = FALSE
+                     )%>%
+  filter(subject_id == patient_id)
+
+
+```
+  
 
 
 ```{bash}
@@ -94,113 +132,87 @@ ls -l ~/mimic/hosp/
 library(tidyverse)
 library(arrow)
 
-csv_file_path <- "~/mimic/hosp/labevents.csv"
-parquet_file <- "./labevents.parquet"
+csv_file_path_lab <- "~/mimic/hosp/labevents.csv"
+parquet_file_lab <- "./labevents.parquet"
 
+```
+
+```{r}
 # Read the CSV file
-labevents_dataset <- arrow::open_dataset(csv_file_path, format = "csv")
+labevents_dataset <- arrow::open_dataset(csv_file_path_lab, format = "csv")
 
 # Write the dataset to a Parquet file
-arrow::write_dataset(labevents_dataset, parquet_file, format = "parquet")
+arrow::write_dataset(labevents_dataset, parquet_file_lab, format = "parquet")
 
-# Open the Parquet dataset
-parquet_dataset <- arrow::open_dataset(parquet_file)
 ```
 
 
 
-
-
 ```{r}
-patient_id <- 10013310
+
 # Open the Parquet dataset
-data_dataset <- arrow::open_dataset(parquet_file)
+ 
 
 # Filter the data for subject_id 10013310 without loading everything into memory
-filtered_data <- data_dataset %>% 
+labev <- arrow::open_dataset(parquet_file_lab) %>% 
   filter(subject_id == patient_id ) %>%
-  collect() # Use collect() to bring the filtered data into memory as a dataframe
-
-# `filtered_data` now contains all the rows for subject_id 10013310
+  collect() 
 
 
 ```
-
 
 
 
 ```{r}
-
-
-# Assuming df is your dataframe and column_name is the column you're interested in
-df_with_frequency <- fdiagnoses %>%
-  group_by(icd_code) %>%
-  mutate(frequency = n()) %>% # Create a frequency column
-  ungroup() %>%
-  arrange(desc(frequency))
-
-# View the dataframe with frequency column
-print(df_with_frequency)
-
-
-
+  ggplot () +
+      geom_segment(
+        data = transfers |> filter(eventtype != "discharge"),
+        mapping = aes (
+          x = intime,
+          xend = outtime,
+          y = "ADT",
+          yend = "ADT",
+          color = careunit,
+          linewidth = str_detect(careunit, "(ICU|CCU)")
+        ),
+      )+
+      
+      geom_point (
+        data = labev |> distinct(charttime, .keep_all = TRUE),
+        mapping = aes(x = charttime, y = "Lab"),
+        shape = '+',
+        size = 5
+      ) +
+      
+      geom_jitter(
+        # only keep the ist procedure on the same day
+        data = procedures,
+        mapping = aes (
+          x = chartdate + hours (12),
+          y = "Procedure",
+          shape = str_sub(long_title, 1, 25)),size = 3,height = 0
+      ) +
+      
+      labs(title = str_c(
+        "Patient", patient_id,", ",
+        patients$gender, ", ",
+        patients$anchor_age+year(admissions$admittime[1])-patients$anchor_year,
+        " years old, ",
+        str_to_lower(admissions$race[1])
+      ),
+      subtitle = str_c(str_to_lower(diagnoses$long_title[1:3]), collapse = "\n"),
+      x = "Calendar Time",
+      y="",
+      color = "Care Unit",
+      shape = "Procedure"
+      ) +
+      guides(linewidth = "none") +
+      scale_y_discrete(limits = rev) +
+      theme_light() +
+      theme(legend.position = "bottom", legend.box = "vertical")
 ```
 
 
-
-
-```{r}
-
-
-library(ggplot2)
-library(dplyr)
-library(stringr)
-
-# Categorizing procedures based on ICD codes
-fprocedures$category <- ifelse(fprocedures$icd_code %in% c("03CG3ZZ", "0DH63UZ", "027034Z"), "Surgical Procedures",
-                        ifelse(fprocedures$icd_code %in% c("4A023N7", "B2111ZZ", "B211YZZ", "B241ZZ3"), "Diagnostic and Therapeutic Procedures",
-                               "Other"))
-
-# Plotting transfers
-transfer_plot <- ftransfers %>%
-  filter(eventtype != "discharge") |>
-  ggplot() +
-  geom_segment(aes(x=intime, xend=outtime, y="ADT", yend="ADT", color=careunit,
-                   linewidth= str_detect(careunit, "(ICU|CCU)"))) +
-  labs(x="", y="", title="Patient 10013310,F,70 years old,black/african",subtitle = "Acute on chronic systolic (congestive) heart failure,Hyperlipidemia, unspecified, Other chronic pain")
-
-# Adding lab and procedure points to the plot
-lab_plot <- transfer_plot +
-  geom_point(data = filtered_data, aes(x=charttime, y="Lab"), 
-             inherit.aes = FALSE, color="black", shape=3, size=3) +
-  geom_point(data = fprocedures, aes(x=as.POSIXct(chartdate), y="Procedure", shape=category),
-             inherit.aes = FALSE, size=3) +
-  labs(shape = "Procedure Type", caption = "Calendar Time") + # Adding caption here
-  guides(linewidth = 'none') + # Removing the legend for the linewidth aesthetic
-  theme(legend.position = "bottom", # Moving legends to the bottom
-        aspect.ratio = 1/4, # Adjusting aspect ratio for a longer and shorter plot
-        legend.box = "horizontal", # Align legends horizontally
-        plot.caption = element_text(hjust = 0.5)) # Centering the caption
-
-# Adjusting plot appearance and legend position
-lab_plot <- lab_plot + theme(
-  legend.position = "bottom", # Place legends at the bottom
-  legend.box = "vertical", # Stack legends vertically; use "horizontal" to align side by side
-  plot.title = element_text(hjust = 0.5), # Center-align the plot title
-  plot.caption = element_text(hjust = 0.5) # Center-align the plot caption
-) +
-guides(
-  shape = guide_legend(title.position = "top"), # Adjust shape legend
-  color = guide_legend(title.position = "top") # Adjust color legend if needed
-)
-
-
-# Displaying the plot
-lab_plot
-
-
-
-```
 
 
 
@@ -217,72 +229,52 @@ Do a similar visualization for the patient `10013310`.
 
 
 ```{r}
-csv_file <- "~/mimic/icu/chartevents.csv"
-parquet_file <- "./chartevents.parquet"
+csv_file_chart <- "~/mimic/icu/chartevents.csv"
+parquet_file_chart <- "./chartevents.parquet"
 
+```
+
+
+```{r}
 # Read the CSV file
-chartevents_dataset <- arrow::open_dataset(csv_file, format = "csv")
+chartevents_dataset <- arrow::open_dataset(csv_file_chart, format = "csv")
 
 # Write the dataset to a Parquet file
-arrow::write_dataset(chartevents_dataset, parquet_file, format = "parquet")
+arrow::write_dataset(chartevents_dataset, parquet_file_chart, format = "parquet")
 
-# Open the Parquet dataset
-parquet_dataset <- arrow::open_dataset(parquet_file)
 ```
 
 ```{r}
-patient_id <- 10013310
-# Open the Parquet dataset
-data_dataset <- arrow::open_dataset(parquet_file)
 
 # Filter the data for subject_id 10013310 without loading everything into memory
-fchartevents <- data_dataset %>% 
+chartev <- arrow::open_dataset(parquet_file_chart, format = "parquet") %>% 
   filter(subject_id == patient_id ) %>%
-  collect() # Use collect() to bring the filtered data into memory as a dataframe
-
-# `filtered_data` now contains all the rows for subject_id 10013310
+  collect() 
+# Use collect() to bring the filtered data into memory as a dataframe
 
 
 ```
-
 
 
 
 ```{r}
-d_items <- read_csv("~/mimic/icu/d_items.csv.gz")
-icustays<- read_csv("~/mimic/icu/icustays.csv.gz")
-
-ficustays <- subset(icustays, subject_id == 10013310)
-
-```
-
-
-
-
-```{r}
-
-# Filter fchartevents for the relevant itemids
-itemids <- c(220045, 220180, 220179, 220210, 223761) # HR, NBPd, NBPs, RR, Temperature°F
-fchartevents <- fchartevents %>% 
-  filter(itemid %in% itemids) %>% 
-  filter(stay_id %in% c(32769810,31203589))%>% 
-  mutate(abbreviation = case_when(
-    str_starts(itemid, "220045") ~ "HR",
-    str_starts(itemid, "220180") ~ "NBPd",
-    str_starts(itemid, "220179") ~ "NBPs",
-    str_starts(itemid, "220210") ~ "RR",
-    str_starts(itemid, "223761") ~ "Temperature°F",
-    TRUE ~ "Other"
-  ))
-```
-
-
-```{r}
-library(gridExtra)
-library(cowplot)
-library(grid)
-data<-fchartevents
-
+items = read_csv("~/mimic/icu/d_items.csv.gz") %>%
+      filter(itemid %in% c(220045, 220179, 220180, 220210, 223761))
+    
+    ces = chartev %>% 
+      filter(subject_id %in% patient_id, 
+             itemid %in% c(220045, 220179, 220180, 220210, 223761))
+    
+    ads = left_join(ces, items)
+    
+    
+     ggplot(ads, aes(x = charttime, y = valuenum, color = abbreviation, group = abbreviation)) +
+      geom_line() +
+      geom_point() +
+      facet_grid(abbreviation ~ stay_id, scales = "free") +
+      labs(title = str_c("Patient ", patient_id, " ICU stays - Vitals"),
+           x = "",
+           y = "")
 ```
 
 
@@ -291,39 +283,9 @@ data<-fchartevents
 
 
 
-```{r}
-# Convert storetime to datetime format and coerce errors to NA
-data$charttime <- ymd_hms(data$charttime, quiet = TRUE)
 
-# Filter and select the relevant columns
-vitals <- data %>%
-  filter(abbreviation %in% c('HR', 'NBPs', 'NBPd', 'RR', 'Temperature°F')) %>%
-  select(subject_id, stay_id, charttime, abbreviation, valuenum) %>%
-  group_by(subject_id, stay_id, charttime, abbreviation) %>%
-  summarise(valuenum = mean(valuenum), .groups = 'drop')
 
-# Pivot the data to wide format using pivot_wider
-vitals_wide <- vitals %>%
-  pivot_wider(names_from = abbreviation, values_from = valuenum)
 
-# Prepare data for plotting
-vitals_long <- gather(vitals_wide, key = 'abbreviation', value = 'value', -subject_id, -stay_id, -charttime)
-
-# Create the plot with one y-axis on the left
-ggplot(vitals_long, aes(x = charttime, y = value, group = abbreviation, color = abbreviation)) +
-  geom_line()+
-  geom_point()+
-  facet_grid(abbreviation ~ stay_id,scales = "free") +
-  theme_minimal() +
-  theme(legend.position = "none") +
-  labs(title = 'Patient 10013310 ICU stays - Vitals', x = NULL, y = NULL) +
-  theme(strip.text.x = element_text(size = 8, face = "bold", color = "black", margin = margin(6, 0, 6, 0)),
-        strip.text.y.left = element_text(angle = 0, hjust = 0.5),
-        strip.background = element_rect(fill = "white"),
-        panel.spacing = unit(2, "lines"),
-        axis.ticks.y = element_line(color = "black"),
-        axis.text.y = element_text(color = "black"))
-```
 
 
 
@@ -604,29 +566,13 @@ We are interested in the lab measurements of creatinine (50912), potassium (5097
 
 ![](labevents_tble.png)
 
-```{r}
-csv_file_path <- "~/mimic/hosp/labevents.csv"
-parquet_file <- "./labevents.parquet"
-
-# Read the CSV file
-labevents_dataset <- arrow::open_dataset(csv_file_path, format = "csv")
-
-# Write the dataset to a Parquet file
-arrow::write_dataset(labevents_dataset, parquet_file, format = "parquet")
-
-# Open the Parquet dataset
-parquet_dataset <- arrow::open_dataset(parquet_file)
-labevents <- arrow::open_dataset(parquet_file)
-```
-
-
 
 
 ```{r}
 
 relevant_itemids <- c(50912, 50971, 50983, 50902, 50882, 51221, 51301, 50931)
 
-labe <- labevents %>% 
+labe <- arrow::open_dataset(parquet_file_lab) %>% 
   select(subject_id,itemid,valuenum,storetime)%>%
   filter( itemid%in% relevant_itemids ) %>%
   collect() # Use collect() to bring the filtered data into memory as a dataframe
@@ -719,33 +665,59 @@ We are interested in the vitals for ICU patients: heart rate (220045), systolic 
 
 ![](chartevents_tble.png)
 
-```{r}
-icustays_tble<- read_csv("~/mimic/icu/icustays.csv.gz")
-```
 
-```{r}
-csv_file <- "~/mimic/icu/chartevents.csv"
-parquet_file <- "./chartevents.parquet"
+
+
+
+```{r eval=FALSE}
+rm(list = ls())
+csv_file_chart <- "~/mimic/icu/chartevents.csv"
+parquet_file_chart <- "./chartevents.parquet"
 
 # Read the CSV file
-chartevents_dataset <- arrow::open_dataset(csv_file, format = "csv")
+chartevents_dataset <- arrow::open_dataset(csv_file_chart, format = "csv")
 
 # Write the dataset to a Parquet file
-arrow::write_dataset(chartevents_dataset, parquet_file, format = "parquet")
+arrow::write_dataset(chartevents_dataset, parquet_file_chart, format = "parquet")
 
-# Open the Parquet dataset
-parquet_dataset <- arrow::open_dataset(parquet_file)
+```
+
+```{r eval=FALSE}
+icustays_tble<- read_csv("~/mimic/icu/icustays.csv.gz") %>%
+  select(subject_id,stay_id,intime,outtime)
+
+chartevents_d_tble<-read_csv("~/mimic/icu/d_items.csv.gz") %>%
+  select(itemid, label)
 ```
 
 
-```{r}
+
+```{r eval=FALSE}
+library(arrow)
+chartevents_tble <- open_dataset(parquet_file_chart, format = "parquet") %>% 
+  filter(itemid %in% c(220045, 220179, 220180, 223761, 220210)) %>% 
+  select(subject_id,hadm_id,stay_id,storetime,itemid,valuenum)
+
+chartevents_tble <- as_tibble(chartevents_tble)
+
+icustays_tble<- read_csv("~/mimic/icu/icustays.csv.gz") %>%
+  select(subject_id,stay_id,intime,outtime)
+
+chartevents_d_tble<-read_csv("~/mimic/icu/d_items.csv.gz") %>%
+  select(itemid, label)
+```
+
+
+```{r eval=FALSE}
 vi<-c(220045,220179,220180,223761,220210)
 
 # Filter the data for subject_id 10013310 without loading everything into memory
-vichev <- parquet_dataset %>% 
+vichev <- arrow::open_dataset(parquet_file_chart) %>% 
   filter(itemid %in% vi ) %>%
   select(subject_id,hadm_id,stay_id,storetime,itemid,valuenum)%>%
-  collect() # Use collect() to bring the filtered data into memory as a dataframe
+collect()
+
+ # Use collect() to bring the filtered data into memory as a dataframe
 
 # `filtered_data` now contains all the rows for subject_id 10013310
 
@@ -753,14 +725,39 @@ vichev <- parquet_dataset %>%
 ```
 
 
-```{r}
+
+
+```{r eval=FALSE}
+icustays_tble <- icustays_tble %>% select(subject_id, intime, outtime, stay_id)
+```
+
+
+```{r eval=FALSE}
+filtered_vichev <- icustays_tble %>%
+  inner_join(vichev, by = "subject_id") %>%
+  filter(intime <= storetime & outtime >= storetime) %>%
+  select(subject_id, itemid, storetime, intime, outtime, stay_id, valuenum)
+```
+
+
+```{r eval=FALSE}
+earliest_itemid_per_stay <- filtered_vichev %>%
+  group_by(stay_id, itemid) %>%
+  arrange(storetime) %>%
+  slice(1) %>%
+  ungroup() 
+```
+
+
+
+
+```{r eval=FALSE}
 library("data.table")
 setDT(vichev) # Convert 'vichev' to data.table
 setDT(icustays_tble) # Conv
 ```
 
-
-```{r}
+```{r eval=FALSE}
 filtered_vichev <- icustays_tble[vichev, 
                                 .(subject_id, itemid, storetime, intime, outtime,stay_id,valuenum),
                                 on = .(subject_id = subject_id, intime <= storetime, outtime >= storetime),
@@ -769,20 +766,20 @@ filtered_vichev
 ```
 
 
-```{r}
+```{r eval=FALSE}
 earliest_itemid_per_stay <- filtered_vichev[, .SD[order(storetime)][1], by = .(stay_id, itemid)]
 
 ```
 
 
-```{r}
+```{r eval=FALSE}
 wide_format <- earliest_itemid_per_stay %>%
   pivot_wider(names_from = itemid, values_from = valuenum, id_cols = c(subject_id, stay_id))
 
 
 ```
 
-```{r}
+```{r eval=FALSE}
 chartevents_tble <- wide_format %>%
   rename(
     heart_rate = `220045`,
@@ -790,7 +787,8 @@ chartevents_tble <- wide_format %>%
     non_invasive_blood_pressure_diastolic = `220180`,
     respiratory_rate = `220210`,
     temperature_fahrenheit = `223761`
-  ) 
+  ) %>%
+arrange(subject_id)
 chartevents_tble
   
 ```
@@ -813,19 +811,122 @@ The final `mimic_icu_cohort` should have one row per ICU stay and columns for ea
 
 ![](mimic_icu_cohort.png)
 
+```{r eval=FALSE}
+# # TODO
+ mimic_icu_cohort <- icustays_tble%>%
+  left_join(admissions,by=c("subject_id","hadm_id"))%>%
+  left_join(patients,by="subject_id")%>%
+  mutate(age_intime=year(intime)-anchor_year + anchor_age)%>%
+  filter(age_intime>=18)%>%
+  left_join(labevents_tble, by= c("subject_id","stay_id"))%>%
+  left_join(chartevents_tble, by = c("subject_id", "stay_id"))
+```
 
 
 
 
 ## Q8. Exploratory data analysis (EDA)
 
+
+```{r}
+mimiciv_icu_cohort<-readRDS("../hw4/mimiciv_shiny/mimic_icu_cohort.rds")
+```
+
+
+
 Summarize the following information about the ICU stay cohort `mimic_icu_cohort` using appropriate numerics or graphs:
 
 - Length of ICU stay `los` vs demographic variables (race, insurance, marital_status, gender, age at intime)
 
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named mimic_icu_cohort and it has the columns los and race
+ggplot(mimiciv_icu_cohort, aes(x=race, y=los)) +
+  geom_boxplot() +
+  labs(title="Length of ICU Stay by Race", 
+       x="Race", 
+       y="Length of Stay (days)") +
+  theme_minimal()
+
+```
+As you can see on the graph, white people stay the longest in the ICU on average.
+
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named mimic_icu_cohort and it has the columns los and insurance
+ggplot(mimiciv_icu_cohort, aes(x=insurance, y=los)) +
+  geom_boxplot() +
+  labs(title="Length of ICU Stay by Insurance Type", 
+       x="Insurance Type", 
+       y="Length of Stay (days)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # This rotates the x-axis labels for better readability
+
+```
+People who have medicare insurance stay the longest time in ICU
+
+
+```{r}
+library(ggplot2)
+
+# Replace 'mimic_icu_cohort' with the actual name of your data frame, and ensure 'los' and 'gender' are the correct column names
+ggplot(data = mimiciv_icu_cohort, aes(x = gender, y = los)) +
+  geom_boxplot() +
+  labs(title = "Length of ICU Stay by Gender", x = "Gender", y = "Length of ICU Stay (days)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Adjust text angle if necessary for readability
+
+```
+Male tend to stay longer
+
+
+
 - Length of ICU stay `los` vs the last available lab measurements before ICU stay
 
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named mimic_icu_cohort and it has the columns los and first_careunit
+ggplot(data = mimiciv_icu_cohort, aes(x = first_careunit, y = los)) +
+  geom_boxplot() +
+  labs(title = "Length of ICU Stay by First Care Unit", x = "First Care Unit", y = "Length of ICU Stay (days)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis text labels if there are many categories
+
+```
+
+
+
 - Length of ICU stay `los` vs the first vital measurements within the ICU stay
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named mimic_icu_cohort and has the columns los and last_careunit
+ggplot(data = mimiciv_icu_cohort, aes(x = last_careunit, y = los)) +
+  geom_boxplot() +
+  labs(title = "Length of ICU Stay by Last Care Unit", x = "Last Care Unit", y = "Length of ICU Stay (days)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # This will rotate the x-axis labels for clarity
+
+```
+
+
+
 
 - Length of ICU stay `los` vs first ICU unit
+```{r}
+library(ggplot2)
+
+# Assuming your data frame is named mimic_icu_cohort and it has the columns los and admission_type
+ggplot(data = mimiciv_icu_cohort, aes(x = admission_type, y = los)) +
+  geom_boxplot() +
+  labs(title = "Length of ICU Stay by Admission Type",
+       x = "Admission Type",
+       y = "Length of ICU Stay (days)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # This will help if labels are long and need to be read at an angle.
+
+```
 
